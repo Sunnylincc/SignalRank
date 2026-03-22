@@ -1,0 +1,8 @@
+model:
+  user_vocab: 50000
+  item_vocab: 250000
+  embedding_dim: 64
+train:
+  batch_size: 128
+  epochs: 3
+  lr: 0.001
