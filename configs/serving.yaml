@@ -1,0 +1,6 @@
+retrieval:
+  top_k: 200
+ranking:
+  top_k: 50
+rerank:
+  diversity_limit_per_taxonomy: 3

@@ -1,0 +1,10 @@
+model:
+  user_id_vocab: 50000
+  item_id_vocab: 250000
+  surface_vocab: 32
+  dense_dim: 16
+  hidden_dims: [128, 64, 32]
+train:
+  batch_size: 256
+  epochs: 3
+  lr: 0.001
