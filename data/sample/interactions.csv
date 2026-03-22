@@ -1,0 +1,8 @@
+user_id,item_id,event_type,event_ts,session_depth,dwell_seconds,surface,country
+101,1001,impression,2026-03-20 10:00:00,3,11,home,US
+101,1001,click,2026-03-20 10:00:03,3,24,home,US
+101,1002,impression,2026-03-21 09:00:00,2,8,home,US
+102,1003,impression,2026-03-21 12:00:00,1,5,search,US
+102,1003,click,2026-03-21 12:00:02,1,15,search,US
+103,1002,impression,2026-03-21 14:00:00,4,14,home,CA
+103,1002,conversion,2026-03-21 14:05:00,4,40,home,CA

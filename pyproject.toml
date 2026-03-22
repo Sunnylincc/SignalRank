@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel", "pybind11>=2.11"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "signalrank"
+version = "0.1.0"
+description = "Industrial-grade retrieval and ranking framework with Python ML pipelines, SQL workflows, and C++ acceleration"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "torch>=2.2",
+  "scikit-learn>=1.4",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "pydantic>=2.7",
+  "pyyaml>=6.0",
+  "duckdb>=1.1"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
