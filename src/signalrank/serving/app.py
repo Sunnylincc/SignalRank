@@ -1,42 +1,60 @@
 from __future__ import annotations
 
+from pathlib import Path
 import numpy as np
+import pandas as pd
 from fastapi import FastAPI
-from signalrank.orchestration.pipeline import PipelineAssets, recommend, retrieve, rank
-from signalrank.retrieval.ann import ANNIndex
+
+from signalrank.common.types import UserContext
+from signalrank.orchestration.pipeline import build_assets, recommend, retrieve_candidates
+from signalrank.ranking.inference import score_candidates
 from signalrank.serving.schemas import RankRequest, RecommendRequest, RecommendResponse, RetrievalRequest, ScoredItem
 
 
-app = FastAPI(title="SignalRank API", version="0.1.0")
+app = FastAPI(title="SignalRank API", version="1.0.0")
 
-_item_ids = list(range(1000, 2000))
-_vectors = np.random.default_rng(7).normal(size=(len(_item_ids), 64)).astype(np.float32)
-_assets = PipelineAssets(ann=ANNIndex(_item_ids, _vectors))
+_DATA_DIR = Path("data/sample")
+_items_df = pd.read_csv(_DATA_DIR / "items.csv")
+_interactions_df = pd.read_csv(_DATA_DIR / "interactions.csv")
+_assets = build_assets(_items_df, _interactions_df)
 
 
 def _user_vector(user_id: int, dim: int = 64) -> np.ndarray:
     return np.random.default_rng(user_id).normal(size=(dim,)).astype(np.float32)
 
 
+def _ctx(user_id: int, ctx: RetrievalRequest | RankRequest | RecommendRequest) -> UserContext:
+    return UserContext(user_id=user_id, hour=ctx.context.hour, surface=ctx.context.surface, country=ctx.context.country)
+
+
+def _to_scored_item(c) -> ScoredItem:
+    return ScoredItem(
+        item_id=c.item_id,
+        retrieval_score=float(c.retrieval_score),
+        rank_score=float(c.rank_score),
+        final_score=float(c.final_score),
+        taxonomy=str(c.metadata.get("taxonomy", "unknown")),
+    )
+
+
 @app.post("/retrieve", response_model=list[ScoredItem])
 def retrieve_endpoint(req: RetrievalRequest) -> list[ScoredItem]:
-    cands = retrieve(_assets.ann, _user_vector(req.user_id), req.top_k)
-    return [ScoredItem(item_id=c.item_id, score=c.score) for c in cands]
+    candidates = retrieve_candidates(_assets, _user_vector(req.user_id), _ctx(req.user_id, req), top_k=req.top_k)
+    return [_to_scored_item(c) for c in candidates]
 
 
 @app.post("/rank", response_model=list[ScoredItem])
 def rank_endpoint(req: RankRequest) -> list[ScoredItem]:
-    seed = _user_vector(req.user_id)
-    base = float(seed.mean())
-    cands = [
-        type("Tmp", (), {"item_id": item_id, "score": base + (item_id % 13) * 0.01, "metadata": {"taxonomy": f"tax_{item_id % 4}"}})()
-        for item_id in req.candidate_item_ids
-    ]
-    ranked = rank(cands)
-    return [ScoredItem(item_id=c.item_id, score=c.score) for c in ranked]
+    user_ctx = _ctx(req.user_id, req)
+    lookup = set(req.candidate_item_ids)
+    candidates = retrieve_candidates(_assets, _user_vector(req.user_id), user_ctx, top_k=max(len(lookup), 1) * 2)
+    filtered = [c for c in candidates if c.item_id in lookup]
+    ranked = score_candidates(filtered, user_ctx)
+    return [_to_scored_item(c) for c in ranked]
 
 
 @app.post("/recommend", response_model=RecommendResponse)
 def recommend_endpoint(req: RecommendRequest) -> RecommendResponse:
-    recs = recommend(_assets, _user_vector(req.user_id), top_k_retrieval=max(100, req.top_k * 10), top_k_final=req.top_k)
-    return RecommendResponse(user_id=req.user_id, items=[ScoredItem(item_id=r.item_id, score=r.score) for r in recs])
+    user_ctx = _ctx(req.user_id, req)
+    recs = recommend(_assets, _user_vector(req.user_id), user_ctx, top_k=req.top_k)
+    return RecommendResponse(user_id=req.user_id, items=[_to_scored_item(c) for c in recs])

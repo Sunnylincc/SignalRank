@@ -1,114 +1,100 @@
 # SignalRank
 
-**Industrial-grade retrieval and ranking framework with Python ML pipelines, SQL feature workflows, and C++-accelerated serving components.**
+**Industrial-grade retrieval and ranking framework with Python ML pipelines, SQL feature workflows, and C++-accelerated retrieval primitives.**
 
-SignalRank is a production-style recommendation system repository that demonstrates how to build and operate a large-scale personalization stack across offline training, online inference, and experimentation.
+SignalRank is a portfolio-quality, production-style repository for large-scale personalized recommendation (content / ads / marketplace style). It demonstrates a coherent multi-stage system with explicit boundaries between data modeling, retrieval, ranking, reranking, evaluation, and online serving.
 
-## Motivation
+---
 
-Modern recommendation stacks for content, ads, and marketplace feeds are multi-stage systems:
+## Why this project exists
 
-1. Candidate generation narrows billions of items to a tractable set.
-2. Retrieval uses learned embeddings to find semantically relevant candidates.
-3. Ranking predicts engagement/conversion probability with richer features.
-4. Reranking applies business constraints and diversity.
+Most recommendation projects are either model-only demos or architecture-only diagrams. SignalRank is intentionally end-to-end:
 
-SignalRank implements this architecture end-to-end with:
-- **Python** for model training, orchestration, and FastAPI serving.
-- **SQL** for feature tables, training set construction, diagnostics, and evaluation.
-- **C++** for low-latency vector retrieval primitives in the online path.
+- **Python** handles model training, orchestration, and online API composition.
+- **SQL** defines reproducible feature tables, training datasets, diagnostics, and offline evaluation slices.
+- **C++** accelerates latency-critical top-k retrieval in the online path (full-index and filtered subset retrieval).
 
-## Final architecture
+These are first-class components, not decorative add-ons.
+
+---
+
+## System architecture
 
 ```mermaid
 flowchart LR
-    A[Raw Events / Metadata] --> B[SQL Feature Pipelines]
-    B --> C[Feature Store Tables]
-    A --> D[LLM Content Enrichment]
+    A[Interactions + Item Metadata] --> B[SQL Feature Layer]
+    B --> C[User/Item Feature Tables]
+    A --> D[LLM Enrichment]
     D --> C
 
     C --> E[Two-Tower Retrieval Training]
     C --> F[Ranker Training]
-    E --> G[Item Embedding Index]
 
-    G --> H[C++ ANN Top-K Service Module]
-    H --> I[Python Retrieval Service]
-    I --> J[Ranker Scoring]
-    J --> K[Reranker Constraints & Diversity]
-    K --> L[/recommend API Response]
+    E --> G[Item Embeddings]
+    G --> H[C++ ANN Index]
 
-    C --> M[Offline Evaluation SQL]
-    E --> M
-    F --> M
+    H --> I[Retrieve Candidates]
+    I --> J[Rank Candidates]
+    J --> K[Rerank Diversity + Freshness]
+    K --> L[FastAPI /recommend]
+
+    C --> M[Offline Evaluation + Diagnostics]
 ```
 
-## Repository layout
+Pipeline stages:
+1. Candidate generation (interaction priors by surface)
+2. ANN retrieval (embedding similarity via C++ accelerated top-k)
+3. Ranking (feature-aware scoring)
+4. Reranking (diversity policy)
+5. Evaluation (AUC, log loss, NDCG@K, MRR@K + SQL slices)
+6. Serving (`/retrieve`, `/rank`, `/recommend`)
+
+---
+
+## Repository structure
 
 ```text
 SignalRank/
-├── README.md
-├── pyproject.toml
-├── Makefile
-├── docs/
-│   └── architecture.md
-├── configs/
-│   ├── retrieval.yaml
-│   ├── ranking.yaml
-│   └── serving.yaml
-├── cpp/
-│   └── ann_index.cpp
-├── src/
-│   ├── signalrank/
-│   │   ├── common/
-│   │   ├── data/
-│   │   ├── features/
-│   │   ├── llm/
-│   │   ├── retrieval/
-│   │   ├── ranking/
-│   │   ├── rerank/
-│   │   ├── evaluation/
-│   │   ├── orchestration/
-│   │   └── serving/
-│   └── signalrank_cpp/
-│       └── __init__.py
+├── cpp/                     # C++ pybind11 retrieval kernels
+├── src/signalrank/
+│   ├── retrieval/           # two-tower + candidate generation + ANN wrapper
+│   ├── ranking/             # ranker model + online scoring logic
+│   ├── rerank/              # policy layer (diversity/freshness)
+│   ├── llm/                 # semantic tag / taxonomy / embedding enrichment
+│   ├── orchestration/       # end-to-end pipeline assembly
+│   ├── serving/             # FastAPI endpoints + schemas
+│   └── evaluation/          # metrics
 ├── sql/
-│   ├── features/
-│   ├── training/
-│   ├── evaluation/
-│   └── diagnostics/
-├── scripts/
-│   ├── run_feature_sql.py
-│   ├── train_retrieval.py
-│   ├── train_ranker.py
-│   ├── evaluate_offline.py
-│   └── run_server.py
-├── tests/
-│   ├── test_metrics.py
-│   └── test_pipeline_smoke.py
-└── data/sample/
-    ├── interactions.csv
-    ├── users.csv
-    └── items.csv
+│   ├── features/            # user/item feature tables
+│   ├── training/            # model training datasets
+│   ├── evaluation/          # scored eval tables and metric slices
+│   └── diagnostics/         # sparsity/distribution/coverage checks
+├── scripts/                 # local run entrypoints
+├── docs/                    # architecture, serving, evaluation, development
+├── tests/                   # smoke + metric/integration tests
+└── data/sample/             # local demo data
 ```
 
-## Why Python + SQL + C++ are all necessary
+---
 
-- **Python** is used for iterative ML work (PyTorch modeling, feature joins, orchestration, online API composition).
-- **SQL** is the source of truth for reproducible feature definitions, training labels, data quality diagnostics, and evaluation slices.
-- **C++** addresses retrieval bottlenecks in online serving by providing low-overhead vector scoring and top-k selection under latency budgets.
+## What is implemented vs simplified
 
-## Implementation plan
+Implemented:
+- Two-tower retrieval training scaffold (PyTorch).
+- Candidate generation by interaction priors.
+- ANN retrieval API with C++ full-index and subset top-k.
+- Ranking stage and policy reranking.
+- SQL features/training/evaluation/diagnostics that connect coherently.
+- FastAPI online endpoints for stage-level and end-to-end inference.
 
-1. Build feature datasets with SQL and materialize model-ready views.
-2. Train two-tower retrieval model and export item/user embeddings.
-3. Build C++ ANN top-k extension and integrate in retrieval service.
-4. Train ranker (Wide+Deep style MLP with dense + categorical embeddings).
-5. Compose retrieval + ranking + reranking in FastAPI endpoints.
-6. Run offline metrics (AUC, log loss, NDCG@K, MRR@K) and diagnostics.
+Simplified (for local reproducibility):
+- Small local sample dataset.
+- Lightweight deterministic online scoring proxy instead of full model-serving runtime.
+- Dense vector brute-force top-k kernel (C++) rather than full ANN graph index.
 
-## Quickstart
+---
 
-### 1) Install
+## Local setup
 
 ```bash
 python -m venv .venv
@@ -116,63 +102,103 @@ source .venv/bin/activate
 pip install -e .[dev]
 ```
 
-### 2) Build C++ extension
+Build note: `pip install -e .` compiles the pybind11 extension (`signalrank_cpp`).
 
-```bash
-python -m pip install -e .
-```
+---
 
-### 3) Run feature + training pipeline
+## End-to-end local demo
+
+1) Build SQL features + training/eval tables:
 
 ```bash
 python scripts/run_feature_sql.py
+```
+
+2) Train retrieval model:
+
+```bash
 python scripts/train_retrieval.py
+```
+
+3) Train ranking model:
+
+```bash
 python scripts/train_ranker.py
+```
+
+4) Run offline evaluation:
+
+```bash
 python scripts/evaluate_offline.py
 ```
 
-### 4) Start API
+5) Start API:
 
 ```bash
 python scripts/run_server.py
 ```
 
-Then test:
+6) Call full pipeline endpoint:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/recommend \
   -H 'Content-Type: application/json' \
-  -d '{"user_id": 101, "context": {"hour": 18, "surface": "home"}}'
+  -d '{"user_id": 101, "context": {"hour": 18, "surface": "home", "country": "US"}, "top_k": 5}'
 ```
 
-## Online API endpoints
+---
 
-- `POST /retrieve`: user/context -> embedding retrieval candidates.
-- `POST /rank`: candidates + feature context -> ranking scores.
-- `POST /recommend`: full pipeline including reranking.
+## Why C++ is necessary here
 
-Latency-aware design notes:
-- Precomputed item embeddings + C++ top-k scoring for retrieval.
-- Lightweight Python orchestration only in request path.
-- Avoid per-request heavyweight joins by serving compact feature snapshots.
+The retrieval path must repeatedly compute vector similarity + top-k under strict latency budgets. Doing this in Python loops creates overhead from interpreter dispatch and object allocation.
 
-## Large-scale system mapping
+`cpp/ann_index.cpp` provides native implementations for:
+- `top_k(query, k)` for full-index retrieval
+- `top_k_subset(query, candidate_ids, k)` for filtered retrieval after candidate generation
 
-This repo maps directly to high-scale personalization design:
-- Candidate generation via interaction priors and taxonomy filters.
-- Learned retrieval via two-tower representation learning.
-- Feature-rich ranking with calibrated probabilities.
-- Reranking for diversity/freshness policy constraints.
-- Offline SQL metrics and diagnostics for experiment readiness.
-- API composition pattern suitable for A/B routing and shadow mode.
+Python orchestrates pipeline logic; C++ handles score-and-select kernels.
+
+---
+
+## Metrics and diagnostics
+
+Python metrics:
+- AUC
+- Log Loss
+- NDCG@K
+- MRR@K
+
+SQL diagnostics:
+- Slice metrics by surface/country
+- Null-rate and quantiles for key features
+- Category coverage table for data health checks
+
+See:
+- `docs/evaluation.md`
+- `sql/evaluation/`
+- `sql/diagnostics/`
+
+---
+
+## Documentation
+
+- `docs/architecture.md` — system rationale and data flow
+- `docs/serving.md` — API contracts and latency notes
+- `docs/evaluation.md` — metric design and SQL validation
+- `docs/development.md` — contributor/developer workflow
+- `docs/audit_final_pass.md` — final-pass audit and upgrade summary
+
+---
 
 ## Future improvements
 
-- ANN graph index (HNSW/IVF) with incremental updates.
-- Real streaming feature store integration.
-- Counterfactual evaluation and IPS/DR estimators.
-- Multi-objective ranker (engagement + revenue + quality).
+- Replace brute-force dense retrieval kernel with HNSW/IVF index.
+- Add model registry and online model version routing.
+- Add calibrated ranker outputs and slice-level calibration dashboards.
+- Add streaming feature freshness checks with event-time watermarks.
+
+---
 
 ## License
 
-MIT (see `LICENSE`).
+MIT
