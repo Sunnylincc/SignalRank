@@ -1,5 +1,4 @@
 import numpy as np
-
 from signalrank.evaluation.metrics import auc, binary_logloss, mrr_at_k, ndcg_at_k
 from signalrank.retrieval.ann import ANNIndex
 
